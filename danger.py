@@ -49,7 +49,7 @@ def add_dev_headers(response):
 def token_converter():
     args = request.args
     
-    # 1. API Key Check (નવું ઉમેર્યું)
+    # 1. API Key Check
     provided_key = args.get('key')
     if not provided_key or provided_key != VALID_API_KEY:
         return add_dev_headers(jsonify({
@@ -78,11 +78,31 @@ def token_converter():
         })), 400
 
     try:
+        # લાઈબ્રેરીમાંથી JWT ટોકન મેળવો
         result = guest_to_jwt(uid, pwd, ob_version=ob_ver, client_version=client_ver)
+        
         if isinstance(result, dict):
+            # --- FIX FOR BOT: Mapping Keys ---
+            # લાઈબ્રેરી jwt_token આપે છે, બોટને token જોઈએ છે
+            if "jwt_token" in result:
+                result["token"] = result["jwt_token"]
+            
+            # રીજન મેપિંગ (lock_region ને region માં કન્વર્ટ કરો)
+            if "decoded" in result and isinstance(result["decoded"], dict):
+                if "lock_region" in result["decoded"]:
+                    result["region"] = result["decoded"]["lock_region"]
+            elif "lock_region" in result:
+                result["region"] = result["lock_region"]
+            
+            # જો success કી ના હોય તો ઉમેરો
+            if "success" not in result:
+                result["success"] = True
+                
             result["credit"] = DEV_TELEGRAM
         else:
+            # જો લાઈબ્રેરી ડાયરેક્ટ ટોકન સ્ટ્રિંગ રિટર્ન કરે
             result = {"success": True, "token": result, "credit": DEV_TELEGRAM}
+            
         return add_dev_headers(jsonify(result))
 
     except Exception as e:
@@ -93,4 +113,5 @@ def token_converter():
         })), 500
 
 if __name__ == '__main__':
+    # લોકલ ટેસ્ટિંગ માટે
     app.run(debug=True, host='0.0.0.0', port=5000)
