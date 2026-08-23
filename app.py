@@ -19,6 +19,7 @@ def encrypt_message(plaintext):
 
 def fetch_open_id(access_token):
     try:
+    
         uid_url = "https://prod-api.reward.ff.garena.com/redemption/api/auth/inspect_token/"
         uid_headers = {
             "authority": "prod-api.reward.ff.garena.com",
@@ -48,6 +49,7 @@ def fetch_open_id(access_token):
         if not uid:
             return None, "Failed to extract UID"
 
+        
         openid_url = "https://shop2game.com/api/auth/player_id_login"
         openid_headers = {
             "Accept": "application/json, text/plain, */*",
@@ -96,7 +98,7 @@ def majorlogin_jwt():
             return jsonify({"message": error}), 400
 
     platforms = [8, 3, 4, 6]
-    diagnostics = []
+    diagnostics = []  
 
     for platform_type in platforms:
         game_data = my_pb2.GameData()
@@ -142,23 +144,16 @@ def majorlogin_jwt():
         edata = bytes.fromhex(hex_encrypted_data)
 
         try:
-            response = requests.post(
-                url, data=edata, headers=headers, verify=False, timeout=8
-            )
-
-            diagnostic = {
+            response = requests.post(url, data=edata, headers=headers, verify=False, timeout=5)
+            diagnostics.append({
                 "platform_type": platform_type,
-                "http_status": response.status_code,
+                "response_status": response.status_code,
                 "response_bytes": len(response.content),
-                "content_type": response.headers.get("Content-Type"),
-            }
+                "content_type": response.headers.get("Content-Type")
+            })
 
-            if response.status_code != 200:
-                diagnostic["response_preview"] = response.text[:500]
-                diagnostics.append(diagnostic)
-                continue
-
-            data_dict = None
+            if response.status_code == 200:
+                data_dict = None
                 try:
                     example_msg = output_pb2.Garena_420()
                     example_msg.ParseFromString(response.content)
@@ -168,32 +163,15 @@ def majorlogin_jwt():
                 except Exception:
                     try:
                         data_dict = response.json()
-                    except ValueError as json_error:
-                        diagnostic["parser"] = "failed"
-                        diagnostic["json_error"] = str(json_error)[:300]
-                        diagnostic["response_preview"] = response.text[:500]
-                        diagnostics.append(diagnostic)
-                        continue
-
-                diagnostic["fields"] = (
-                    sorted(data_dict.keys()) if isinstance(data_dict, dict) else []
-                )
-                diagnostic["has_token"] = bool(
-                    isinstance(data_dict, dict) and data_dict.get("token")
-                )
+                    except ValueError:
+                        continue  
 
                 if data_dict and "token" in data_dict:
                     token_value = data_dict["token"]
                     try:
                         decoded_token = jwt.decode(token_value, options={"verify_signature": False})
                     except Exception as e:
-                        diagnostic["jwt_decoded"] = False
-                        diagnostic["jwt_error"] = str(e)[:300]
-                        diagnostics.append(diagnostic)
-                        continue
-
-                    diagnostic["jwt_decoded"] = True
-                    diagnostic["jwt_fields"] = sorted(decoded_token.keys())
+                        decoded_token = {}
 
                     result = {
                         "account_id": decoded_token.get("account_id"),
@@ -203,29 +181,17 @@ def majorlogin_jwt():
                         "platform": decoded_token.get("external_type"),
                         "region": decoded_token.get("lock_region"),
                         "status": "success",
-                        "token": token_value,
-                        "diagnostics": diagnostics + [diagnostic]
+                        "token": token_value
                     }
                     return jsonify(result), 200
-        except requests.RequestException as e:
-            diagnostics.append({
-                "platform_type": platform_type,
-                "error_type": "request_exception",
-                "error": str(e)[:300]
-            })
-        except Exception as e:
-            diagnostics.append({
-                "platform_type": platform_type,
-                "error_type": "unexpected_exception",
-                "error": str(e)[:300]
-            })
+        except requests.RequestException:
+            continue  
 
     return jsonify({
         "message": "No valid platform found",
         "diagnostics": diagnostics
     }), 400
 
-@app.route('/guest_to_jwt', methods=['GET'])
 @app.route('/token', methods=['GET'])
 def oauth_guest():
     uid = request.args.get('uid')
@@ -272,7 +238,7 @@ def oauth_guest():
         'open_id': oauth_data['open_id']
     }
     
-    with app.test_request_context('/access-jwt', query_string=params):
+    with app.test_request_context('/api/token', query_string=params):
         return majorlogin_jwt()
 
 if __name__ == '__main__':
