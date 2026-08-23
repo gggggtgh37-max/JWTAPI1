@@ -1,14 +1,18 @@
 {
+  "version": 2,
   "builds": [
     {
-      "src": "danger.py",
-      "use": "@vercel/python"
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxDuration": 30
+      }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "danger.py"
+      "dest": "api/index.py"
     }
   ]
 }
