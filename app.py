@@ -95,7 +95,8 @@ def majorlogin_jwt():
         if error:
             return jsonify({"message": error}), 400
 
-    platforms = [8, 3, 4, 6]  
+    platforms = [8, 3, 4, 6]
+    diagnostics = []
 
     for platform_type in platforms:
         game_data = my_pb2.GameData()
@@ -141,10 +142,23 @@ def majorlogin_jwt():
         edata = bytes.fromhex(hex_encrypted_data)
 
         try:
-            response = requests.post(url, data=edata, headers=headers, verify=False, timeout=5)
+            response = requests.post(
+                url, data=edata, headers=headers, verify=False, timeout=8
+            )
 
-            if response.status_code == 200:
-                data_dict = None
+            diagnostic = {
+                "platform_type": platform_type,
+                "http_status": response.status_code,
+                "response_bytes": len(response.content),
+                "content_type": response.headers.get("Content-Type"),
+            }
+
+            if response.status_code != 200:
+                diagnostic["response_preview"] = response.text[:500]
+                diagnostics.append(diagnostic)
+                continue
+
+            data_dict = None
                 try:
                     example_msg = output_pb2.Garena_420()
                     example_msg.ParseFromString(response.content)
@@ -154,15 +168,32 @@ def majorlogin_jwt():
                 except Exception:
                     try:
                         data_dict = response.json()
-                    except ValueError:
-                        continue  
+                    except ValueError as json_error:
+                        diagnostic["parser"] = "failed"
+                        diagnostic["json_error"] = str(json_error)[:300]
+                        diagnostic["response_preview"] = response.text[:500]
+                        diagnostics.append(diagnostic)
+                        continue
+
+                diagnostic["fields"] = (
+                    sorted(data_dict.keys()) if isinstance(data_dict, dict) else []
+                )
+                diagnostic["has_token"] = bool(
+                    isinstance(data_dict, dict) and data_dict.get("token")
+                )
 
                 if data_dict and "token" in data_dict:
                     token_value = data_dict["token"]
                     try:
                         decoded_token = jwt.decode(token_value, options={"verify_signature": False})
                     except Exception as e:
-                        decoded_token = {}
+                        diagnostic["jwt_decoded"] = False
+                        diagnostic["jwt_error"] = str(e)[:300]
+                        diagnostics.append(diagnostic)
+                        continue
+
+                    diagnostic["jwt_decoded"] = True
+                    diagnostic["jwt_fields"] = sorted(decoded_token.keys())
 
                     result = {
                         "account_id": decoded_token.get("account_id"),
@@ -172,13 +203,27 @@ def majorlogin_jwt():
                         "platform": decoded_token.get("external_type"),
                         "region": decoded_token.get("lock_region"),
                         "status": "success",
-                        "token": token_value
+                        "token": token_value,
+                        "diagnostics": diagnostics + [diagnostic]
                     }
                     return jsonify(result), 200
-        except requests.RequestException:
-            continue  
+        except requests.RequestException as e:
+            diagnostics.append({
+                "platform_type": platform_type,
+                "error_type": "request_exception",
+                "error": str(e)[:300]
+            })
+        except Exception as e:
+            diagnostics.append({
+                "platform_type": platform_type,
+                "error_type": "unexpected_exception",
+                "error": str(e)[:300]
+            })
 
-    return jsonify({"message": "No valid platform found"}), 400
+    return jsonify({
+        "message": "No valid platform found",
+        "diagnostics": diagnostics
+    }), 400
 
 @app.route('/guest_to_jwt', methods=['GET'])
 @app.route('/token', methods=['GET'])
