@@ -19,7 +19,6 @@ def encrypt_message(plaintext):
 
 def fetch_open_id(access_token):
     try:
-    
         uid_url = "https://prod-api.reward.ff.garena.com/redemption/api/auth/inspect_token/"
         uid_headers = {
             "authority": "prod-api.reward.ff.garena.com",
@@ -49,7 +48,6 @@ def fetch_open_id(access_token):
         if not uid:
             return None, "Failed to extract UID"
 
-        
         openid_url = "https://shop2game.com/api/auth/player_id_login"
         openid_headers = {
             "Accept": "application/json, text/plain, */*",
@@ -182,7 +180,8 @@ def majorlogin_jwt():
 
     return jsonify({"message": "No valid platform found"}), 400
 
-@app.route('guest_to_jwt', methods=['GET'])
+@app.route('/guest_to_jwt', methods=['GET'])
+@app.route('/token', methods=['GET'])
 def oauth_guest():
     uid = request.args.get('uid')
     password = request.args.get('password')
@@ -228,7 +227,7 @@ def oauth_guest():
         'open_id': oauth_data['open_id']
     }
     
-    with app.test_request_context('/api/token', query_string=params):
+    with app.test_request_context('/access-jwt', query_string=params):
         return majorlogin_jwt()
 
 if __name__ == '__main__':
